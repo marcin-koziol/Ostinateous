@@ -1,0 +1,64 @@
+name: build
+
+# Builds the ostinateous VST3/LV2/CLAP plugin for Linux, Windows, and macOS.
+# Same CI approach as sideous/sideous-drums/sideous-bass/sideous-noise/
+# sideous-pad/sideous-umbra/phellipe - see those repos' comments for the
+# full rationale on distrho/dpf-cmake-action + pawpaw.
+
+on:
+  push:
+    branches: ['*']
+    tags: ['v*']
+  pull_request:
+    branches: ['*']
+
+# GITHUB_TOKEN defaults to read-only on this repo, which makes the release
+# step (softprops/action-gh-release, triggered on a "v*" tag push) fail with
+# a 403 - it needs write access to create the release. Explicit here rather
+# than flipping the repo-wide default so the extra permission stays scoped
+# to this workflow.
+permissions:
+  contents: write
+
+env:
+  NAME: ostinateous
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: distrho/dpf-cmake-action@v1
+        with:
+          target: linux-x86_64
+          dpf_path: dpf
+          pawpaw: true
+
+  windows:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: distrho/dpf-cmake-action@v1
+        with:
+          target: win64
+          dpf_path: dpf
+          pawpaw: true
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: distrho/dpf-cmake-action@v1
+        with:
+          target: macos-universal
+          dpf_path: dpf
+          pawpaw: true
