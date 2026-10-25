@@ -44,6 +44,7 @@
  */
 
 #include "DistrhoUI.hpp"
+#include "UiScale.hpp"
 #include "Params.hpp"
 #include "dsp/Fills.hpp"
 #include "dsp/FactoryPatterns.hpp"
@@ -87,7 +88,14 @@ public:
         // width/height every repaint) rather than uniformly blowing up a
         // fixed-size image, which was DPF's behavior with it enabled and
         // showed no more musical content - just bigger everything.
-        setGeometryConstraints(kMinWidth, kMinHeight, false, false);
+        //
+        // So the UI scale (UiScale.hpp: the user's setting, or the host /
+        // desktop factor on AUTO) is applied by hand instead: the window
+        // opens and is limited at the scaled size, layout runs in logical
+        // units (window size / fScale), painting is scaled up and mouse
+        // positions scaled back down - a bigger window still shows more
+        // grid, just at the right density.
+        applyScale(1200.0, 800.0);
         fRng.seed(std::random_device{}());
         fUserPatternNames = ui::listPatterns();
         fExportFolder = ui::loadExportFolder();
@@ -127,6 +135,18 @@ protected:
             return;
         }
         repaint();
+    }
+
+    // CLAP / VST3: the host sized its window from DPF's default before this
+    // UI existed, and a size set in the constructor never reaches it -
+    // announce the scaled size once, now that the host listens
+    void uiIdle() override
+    {
+        if (!fHostSizeSynced)
+        {
+            fHostSizeSynced = true;
+            setSize(getWidth(), getHeight());
+        }
     }
 
     void onResize(const ResizeEvent& ev) override
@@ -177,7 +197,13 @@ protected:
         state.defaultVelocity = fDefaultVelocity;
         state.hoverVelocityBox = fHoverVelocityBox;
 
+        sideous_uiscale::formatLabel(fScaleSetting, fScale, fScaleLabel, sizeof(fScaleLabel));
+        state.scaleLabel = fScaleLabel;
+
+        cairo_save(context.handle);
+        cairo_scale(context.handle, fScale, fScale);
         ui::paint(context.handle, fLayout, state);
+        cairo_restore(context.handle);
     }
 
     // ---------------------------------------------------------------------
@@ -188,8 +214,8 @@ protected:
         if (ev.button != 1)
             return false;
 
-        const double mx = ev.pos.getX();
-        const double my = ev.pos.getY();
+        const double mx = ev.pos.getX() / fScale;
+        const double my = ev.pos.getY() / fScale;
 
         if (ev.press)
         {
@@ -416,8 +442,8 @@ protected:
 
     bool onMotion(const MotionEvent& ev) override
     {
-        const double mx = ev.pos.getX();
-        const double my = ev.pos.getY();
+        const double mx = ev.pos.getX() / fScale;
+        const double my = ev.pos.getY() / fScale;
         fLastMouseX = mx;
         fLastMouseY = my;
 
@@ -532,8 +558,8 @@ protected:
 
     bool onScroll(const ScrollEvent& ev) override
     {
-        const double mx = ev.pos.getX();
-        const double my = ev.pos.getY();
+        const double mx = ev.pos.getX() / fScale;
+        const double my = ev.pos.getY() / fScale;
         // some backends report a plain vertical wheel via delta.x rather
         // than delta.y (confirmed in this environment: the existing pan
         // logic below already falls back the same way) - prefer y, but
@@ -663,9 +689,28 @@ protected:
     }
 
 private:
+    // window = logical size * fScale; the logical size is kept across scale
+    // changes, so switching scale changes density, not how much grid shows
+    void applyScale(double logicalWidth, double logicalHeight)
+    {
+        fScale = sideous_uiscale::resolve(fScaleSetting, getScaleFactor());
+        setGeometryConstraints((uint)std::lround(kMinWidth * fScale), (uint)std::lround(kMinHeight * fScale), false, false);
+        setSize((uint)std::lround(logicalWidth * fScale), (uint)std::lround(logicalHeight * fScale));
+    }
+
+    void cycleScale()
+    {
+        const double logicalWidth = getWidth() / fScale, logicalHeight = getHeight() / fScale;
+        fScaleSetting = sideous_uiscale::nextSetting(fScaleSetting);
+        sideous_uiscale::saveSetting(fScaleSetting);
+        applyScale(logicalWidth, logicalHeight);
+        rebuildLayout();
+        repaint();
+    }
+
     void rebuildLayout()
     {
-        fLayout = ui::buildLayout((float)getWidth(), (float)getHeight(), fPattern, fView);
+        fLayout = ui::buildLayout((float)(getWidth() / fScale), (float)(getHeight() / fScale), fPattern, fView);
     }
 
     void clampView()
@@ -723,7 +768,7 @@ private:
         return -1;
     }
 
-    // -1 none, 0=prev,1=next,2=generate,3=save/set,4=delete,5=exportMidi,6=folder
+    // -1 none, 0=prev,1=next,2=generate,3=save/set,4=delete,5=exportMidi,6=folder,7=UI scale
     int hitTestPatternRow(double mx, double my) const noexcept
     {
         const ui::PatternRow& pr = fLayout.patternRow;
@@ -734,6 +779,7 @@ private:
         if (ui::hitRect(pr.del, mx, my)) return 4;
         if (ui::hitRect(pr.exportMidi, mx, my)) return 5;
         if (ui::hitRect(pr.folder, mx, my)) return 6;
+        if (ui::hitRect(pr.scale, mx, my)) return 7;
         return -1;
     }
 
@@ -900,6 +946,9 @@ private:
         case 5:
             exportMidiNow();
             break;
+        case 7:
+            cycleScale();
+            break;
         case 6:
             if (fEditTarget == EditTarget::None)
             {
@@ -1038,6 +1087,11 @@ private:
 
     Pattern fPattern;
     ui::Layout fLayout;
+    // UI scale (UiScale.hpp), applied by hand (see constructor)
+    float fScaleSetting = sideous_uiscale::loadSetting(); // 0 = AUTO
+    double fScale = 1.0;
+    char fScaleLabel[24] = {};
+    bool fHostSizeSynced = false;
     ui::View fView;
     std::vector<uint8_t> fSelected;
     std::vector<Note> fDragOrigNotes;

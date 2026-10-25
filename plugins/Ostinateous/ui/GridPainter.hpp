@@ -171,6 +171,7 @@ struct PatternRow
     Rect prev, next, nameLabel;
     Rect generate, save, del;
     Rect exportMidi, folder;
+    Rect scale; // UI scale (UiScale.hpp), label from PaintState::scaleLabel
 };
 
 // bar-targeted fills (see dsp/Fills.hpp) - selectedBar is set by clicking in
@@ -279,7 +280,8 @@ inline Layout buildLayout(float width, float height, const Pattern& pattern, Vie
         pr.del = { x, patternY, 60.0f, patternH }; x += 60.0f + 16.0f;
 
         pr.exportMidi = { x, patternY, 110.0f, patternH }; x += 110.0f + 4.0f;
-        pr.folder = { x, patternY, 70.0f, patternH };
+        pr.folder = { x, patternY, 70.0f, patternH }; x += 70.0f + 16.0f;
+        pr.scale = { x, patternY, 96.0f, patternH };
     }
 
     // --- fill row ---
@@ -462,7 +464,8 @@ struct PaintState
     // pattern library
     const char* currentName = "Techno";
     bool isUserPattern = false;    // controls whether Delete is enabled
-    int hoverPatternBtn = -1;      // -1 none, 0=prev,1=next,2=generate,3=save,4=delete,5=exportMidi,6=folder
+    int hoverPatternBtn = -1;      // -1 none, 0=prev,1=next,2=generate,3=save,4=delete,5=exportMidi,6=folder,7=UI scale
+    const char* scaleLabel = "";   // UI-scale button text (UiScale.hpp formatLabel)
     const char* toast = nullptr;   // brief confirmation message (e.g. "Saved!"), or nullptr
 
     // in-place text entry, shared by "Save As" (pattern name) and "Folder"
@@ -608,6 +611,7 @@ inline void paintPatternRow(cairo_t* cr, const Layout& L, const PaintState& stat
 
     button(pr.exportMidi, "EXPORT MIDI", false, true, state.hoverPatternBtn, 5);
     button(pr.folder, "FOLDER", editingFolder, true, state.hoverPatternBtn, 6);
+    button(pr.scale, state.scaleLabel, false, true, state.hoverPatternBtn, 7);
 
     if (state.toast != nullptr)
     {
